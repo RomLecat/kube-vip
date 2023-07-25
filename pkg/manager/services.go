@@ -42,13 +42,17 @@ func (sm *Manager) syncServices(_ context.Context, svc *v1.Service, wg *sync.Wai
 	for x := range sm.serviceInstances {
 		if sm.serviceInstances[x].UID == newServiceUID {
 			log.Debugf("isDHCP: %t, newServiceAddress: %s", sm.serviceInstances[x].isDHCP, newServiceAddress)
-			// If the found instance's DHCP configuration doesn't match the new service, delete it.
+			// If the dhcp configuration doesn't match the ip config,
+			// or if the service's vip has been updated,
+			// or if the port has been updated,
+			// delete the stale instance
 			if sm.serviceInstances[x].isDHCP && newServiceAddress != "0.0.0.0" ||
 				!sm.serviceInstances[x].isDHCP && newServiceAddress == "0.0.0.0" ||
 				!sm.serviceInstances[x].isDHCP && len(svc.Status.LoadBalancer.Ingress) > 0 &&
 					newServiceAddress != svc.Status.LoadBalancer.Ingress[0].IP ||
 				len(svc.Status.LoadBalancer.Ingress) > 0 && !comparePortsAndPortStatuses(svc) {
 				if err := sm.deleteService(newServiceUID); err != nil {
+					log.Errorf("Error when deleting service '%s' with name %s/%s", newServiceUID, svc.Namespace, svc.Name)
 					return err
 				}
 				break
@@ -146,6 +150,7 @@ func (sm *Manager) addService(svc *v1.Service) error {
 }
 
 func (sm *Manager) deleteService(uid string) error {
+	log.Debugf("Deleting service with uid: '%s'", uid)
 	// pretect multiple calls
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
